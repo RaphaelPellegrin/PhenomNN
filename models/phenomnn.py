@@ -1,17 +1,25 @@
-
 import math
-import torch 
+import torch
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-from dgl.mock_sparse import create_from_coo, diag, identity
+from utils.sparse_utils import create_from_coo, diag, identity
 
-       
+
 class GraphConvolution(nn.Module):
 
-    def __init__(self, in_features, out_features, residual=False, variant=False, incidence_v=100, incidence_e=50,
-                 init_dist=None, args=None):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        residual=False,
+        variant=False,
+        incidence_v=100,
+        incidence_e=50,
+        init_dist=None,
+        args=None,
+    ):
         super(GraphConvolution, self).__init__()
         self.variant = variant
         self.args = args
@@ -19,21 +27,23 @@ class GraphConvolution(nn.Module):
             self.in_features = 2 * in_features
         else:
             self.in_features = in_features
-        self.lam4=args.lam4
-        if self.lam4!=0:
+        self.lam4 = args.lam4
+        if self.lam4 != 0:
             print("lam4 is not zero!!!!!!! wrong")
             exit(0)
-        self.lam0=args.lam0
-        self.lam1=args.lam1
-        self.alpha=args.alp if args.alp !=0 else 1/(1+args.lam4+args.lam0+args.lam1)
-        self.num_steps=args.prop_step
+        self.lam0 = args.lam0
+        self.lam1 = args.lam1
+        self.alpha = (
+            args.alp if args.alp != 0 else 1 / (1 + args.lam4 + args.lam0 + args.lam1)
+        )
+        self.num_steps = args.prop_step
         self.out_features = out_features
         self.residual = residual
-        self.notresidual=args.notresidual
-        self.twoHgamma=args.twoHgamma
+        self.notresidual = args.notresidual
+        self.twoHgamma = args.twoHgamma
         # self.weight = Parameter(torch.FloatTensor(self.in_features, self.out_features))
         self.adj = None
-        self.normalize_type=args.normalize_type#in ["edge","none","full","node"]
+        self.normalize_type = args.normalize_type  # in ["edge","none","full","node"]
         if args.H:
             # H = torch.rand(in_features, in_features)
             # bound = 4/in_features # normal
@@ -45,49 +55,45 @@ class GraphConvolution(nn.Module):
             # H = H + torch.eye(in_features)
             # self.H=nn.Parameter(H)
             H = {}
-            for t in ["beta","gamma1","gamma2"]:
+            for t in ["beta", "gamma1", "gamma2"]:
 
                 if args.notresidual:
                     H[t] = torch.rand(in_features, in_features)
-                    bound = 4/in_features # normal
+                    bound = 4 / in_features  # normal
                     nn.init.normal_(H[t], 0, bound)
                     H[t] = nn.Parameter(H[t])
                 else:
 
-
                     H[t] = torch.rand(in_features, in_features)
-                    bound =1/in_features # normal
+                    bound = 1 / in_features  # normal
                     nn.init.normal_(H[t], 0, bound)
                     H[t] = H[t] + th.eye(in_features)
-                
-                
+
                     H[t] = nn.Parameter(H[t])
-                
+
             self.H = nn.ParameterDict(H)
 
         else:
-            self.H=None
-       
+            self.H = None
 
-        self.init_attn=None
+        self.init_attn = None
         self.reset_parameters()
 
     def reset_parameters(self):
         # stdv = 1. / math.sqrt(self.out_features)
         # self.weight.data.uniform_(-stdv, stdv)
         pass
-    
+
     def forward(self, X, A, D):
-        A_beta,A_gamma=A
-        D_beta,D_gamma,I=D
+        A_beta, A_gamma = A
+        D_beta, D_gamma, I = D
         ##B is the incidence matrix with N x E
-        
+
         ##after linear and dropout
-         # Compute Y = Y0 = f(X; W) using a two-layer MLP.
-        H=self.H 
+        # Compute Y = Y0 = f(X; W) using a two-layer MLP.
+        H = self.H
         # Y = Y0 = self.act_fn(self.mlp(X))
         Y = Y0 = X
-       
 
         ####
 
@@ -101,51 +107,94 @@ class GraphConvolution(nn.Module):
             # Q_tild=self.lam1*B_@D_stinv@B_.T + I
             # D_st=diag((B ).sum(1))
             ###############################diagD
-            Q_tild= self.lam0*D_beta+self.lam1*D_gamma + I
-            diagD=True
+            Q_tild = self.lam0 * D_beta + self.lam1 * D_gamma + I
+            diagD = True
 
-            L_gamma=D_gamma.as_sparse()-A_gamma
+            L_gamma = D_gamma.as_sparse() - A_gamma
             # D_st=diag(B.sum(1))
-            H_1=H["beta"]
-            H_2=H["gamma1"]
-            H_3=H["gamma2"]
+            H_1 = H["beta"]
+            H_2 = H["gamma1"]
+            H_3 = H["gamma2"]
         else:
 
-            Q_tild= self.lam0*D_beta+self.lam1*D_gamma + I
+            Q_tild = self.lam0 * D_beta + self.lam1 * D_gamma + I
 
         # Iteratively compute new Y by equation (6) in the paper.
         for k in range(self.num_steps):
             if H is not None:
-                
+
                 # Y_hat = self.lam0 * A_beta @ Y + Y0 + self.lam1 * ( B @B_.T @ Y @ H.T+ B_ @ B.T @ Y @ H- D_st @ Y @ H @ H.T )
                 ##diagD
                 if diagD:
                     if self.twoHgamma:
-                        Y_hat = self.lam0 * (A_beta @ Y @ (H_1+H_1.T)- D_beta @ Y @ H_1 @ H_1.T ) + Y0 + self.lam1/2 * ( L_gamma @ Y + A_gamma @ Y @ (H_2+H_2.T)- D_gamma @ Y @ H_2 @ H_2.T + A_gamma @ Y @ (H_3+H_3.T)- A_gamma @ Y @ H_3 @ H_3.T)
+                        Y_hat = (
+                            self.lam0
+                            * (A_beta @ Y @ (H_1 + H_1.T) - D_beta @ Y @ H_1 @ H_1.T)
+                            + Y0
+                            + self.lam1
+                            / 2
+                            * (
+                                L_gamma @ Y
+                                + A_gamma @ Y @ (H_2 + H_2.T)
+                                - D_gamma @ Y @ H_2 @ H_2.T
+                                + A_gamma @ Y @ (H_3 + H_3.T)
+                                - A_gamma @ Y @ H_3 @ H_3.T
+                            )
+                        )
                     else:
                         if self.args.HisI:
-                            Y_hat = self.lam0 * (2*A_beta @ Y- D_beta @ Y ) + Y0 + self.lam1 *  A_gamma @ Y 
+                            Y_hat = (
+                                self.lam0 * (2 * A_beta @ Y - D_beta @ Y)
+                                + Y0
+                                + self.lam1 * A_gamma @ Y
+                            )
                         else:
 
-                            Y_hat = self.lam0 * (A_beta @ Y @ (H_1+H_1.T)- D_beta @ Y @ H_1 @ H_1.T ) + Y0 + self.lam1 * ( L_gamma @ Y + A_gamma @ Y @ (H_2+H_2.T)- D_gamma @ Y @ H_2 @ H_2.T )
+                            Y_hat = (
+                                self.lam0
+                                * (
+                                    A_beta @ Y @ (H_1 + H_1.T)
+                                    - D_beta @ Y @ H_1 @ H_1.T
+                                )
+                                + Y0
+                                + self.lam1
+                                * (
+                                    L_gamma @ Y
+                                    + A_gamma @ Y @ (H_2 + H_2.T)
+                                    - D_gamma @ Y @ H_2 @ H_2.T
+                                )
+                            )
             else:
 
-                Y_hat = self.lam0 * A_beta @ Y + Y0 + self.lam1 *  A_gamma @ Y 
-            Y = (1 - self.alpha) * Y + self.alpha * (Q_tild ** -1) @ Y_hat
-
+                Y_hat = self.lam0 * A_beta @ Y + Y0 + self.lam1 * A_gamma @ Y
+            Y = (1 - self.alpha) * Y + self.alpha * (Q_tild**-1) @ Y_hat
 
         # we have linear out of this module
         return Y
-        
 
 
 class phenomnn(nn.Module):
-    def __init__(self, nfeat, nlayers, nhidden, nclass, dropout, lamda, alpha, variant, incidence_v=100, incidence_e=50,
-                 init_dist=None, args=None):
+    def __init__(
+        self,
+        nfeat,
+        nlayers,
+        nhidden,
+        nclass,
+        dropout,
+        lamda,
+        alpha,
+        variant,
+        incidence_v=100,
+        incidence_e=50,
+        init_dist=None,
+        args=None,
+    ):
         super(phenomnn, self).__init__()
         self.convs = nn.ModuleList()
         for _ in range(1):
-            self.convs.append(GraphConvolution(nhidden, nhidden, variant=variant,args=args))
+            self.convs.append(
+                GraphConvolution(nhidden, nhidden, variant=variant, args=args)
+            )
         self.fcs = nn.ModuleList()
         self.fcs.append(nn.Linear(nfeat, nhidden))
         self.fcs.append(nn.Linear(nhidden, nclass))
@@ -179,9 +228,12 @@ class phenomnn(nn.Module):
         return self.out_features
 
     def __repr__(self):
-        return "%s lamda=%s alpha=%s (%d - [%d:%d] > %d)" % (self.__class__.__name__,self.lamda,
-                                                    self.alpha,
-                                                    self.in_features,
-                                                    self.hiddendim,
-                                                    self.nhiddenlayer,
-                                                    self.out_features)
+        return "%s lamda=%s alpha=%s (%d - [%d:%d] > %d)" % (
+            self.__class__.__name__,
+            self.lamda,
+            self.alpha,
+            self.in_features,
+            self.hiddendim,
+            self.nhiddenlayer,
+            self.out_features,
+        )
