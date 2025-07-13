@@ -8,19 +8,21 @@ def load(args):
     """
     parses the dataset
     """
-    dataset = parser(args.data_path, args.activate_dataset).parse()
+    dataset = parser(args.data_path, args.activate_dataset, args.encoding).parse()
 
     current = args.data_path  # os.path.abspath(inspect.getfile(inspect.currentframe()))
     # Dir, _ = os.path.split(current)
     Dir = args.data_path
-    file = os.path.join(Dir, args.activate_dataset, "splits", str(args.split) + ".pickle")
-    print("slits",args.split)
-    #if not os.path.isfile(file): print("split + ", str(args.split), "does not exist")
-    with open(file, 'rb') as H:
+    file = os.path.join(
+        Dir, args.activate_dataset, "splits", str(args.split) + ".pickle"
+    )
+    print("slits", args.split)
+    # if not os.path.isfile(file): print("split + ", str(args.split), "does not exist")
+    with open(file, "rb") as H:
         Splits = pickle.load(H)
-        train, test = Splits['train'], Splits['test']
+        train, test = Splits["train"], Splits["test"]
 
-        #print("len dataset:", len(dataset))
+        # print("len dataset:", len(dataset))
     return dataset, train, test
 
 
@@ -29,18 +31,20 @@ class parser(object):
     an object for parsing data
     """
 
-    def __init__(self, data, dataset):
+    def __init__(self, data, dataset, encoding="features"):
         """
-        initialises the data directory 
+        initialises the data directory
 
         arguments:
         data: coauthorship/cocitation
         dataset: cora/dblp/acm for coauthorship and cora/citeseer/pubmed for cocitation
+        encoding: encoding file to use for features (without .pkl extension)
         """
 
         # current = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
         self.d = os.path.join(data, dataset)
         self.data, self.dataset = data, dataset
+        self.encoding = encoding
 
     def parse(self):
         """
@@ -57,24 +61,34 @@ class parser(object):
 
         assumes the following files to be present in the dataset directory:
         hypergraph.pickle: coauthorship hypergraph
-        features.pickle: bag of word features
+        features.pickle: bag of word features (or specified encoding)
         labels.pickle: labels of papers
 
         n: number of hypernodes
         returns: a dictionary with hypergraph, features, and labels as keys
         """
 
-        with open(os.path.join(self.d, 'hypergraph.pickle'), 'rb') as handle:
+        with open(os.path.join(self.d, "hypergraph.pickle"), "rb") as handle:
             hypergraph = pickle.load(handle)
-            #print("number of hyperedges is", len(hypergraph))
+            # print("number of hyperedges is", len(hypergraph))
 
-        with open(os.path.join(self.d, 'features.pickle'), 'rb') as handle:
+        # Use the specified encoding file, defaulting to features.pickle
+        features_file = "features.pickle"  # default
+        if hasattr(self, "encoding") and self.encoding != "features":
+            features_file = f"{self.encoding}.pkl"
+
+        with open(os.path.join(self.d, features_file), "rb") as handle:
             features = pickle.load(handle).todense()
 
-        with open(os.path.join(self.d, 'labels.pickle'), 'rb') as handle:
+        with open(os.path.join(self.d, "labels.pickle"), "rb") as handle:
             labels = self._1hot(pickle.load(handle))
 
-        return {'hypergraph': hypergraph, 'features': features, 'labels': labels, 'n': features.shape[0]}
+        return {
+            "hypergraph": hypergraph,
+            "features": features,
+            "labels": labels,
+            "n": features.shape[0],
+        }
 
     def _1hot(self, labels):
         """
@@ -88,7 +102,8 @@ class parser(object):
         onehot = {c: np.identity(len(classes))[i, :] for i, c in enumerate(classes)}
         return np.array(list(map(onehot.get, labels)), dtype=np.int32)
 
-if __name__ == '__main__':
-    data = parser(data='../../data/hgnn/hypergcn/coauthorship',dataset='cora')
+
+if __name__ == "__main__":
+    data = parser(data="../../data/hgnn/hypergcn/coauthorship", dataset="cora")
     data_dict = data._load_data()
     print(data_dict)
