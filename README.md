@@ -15,6 +15,16 @@ equivalency between hypergraphs and undirected graphs](https://arxiv.org/abs/220
 For convenience, we provide a copy of datasets in this [link](https://drive.google.com/file/d/13MI8p9i1worh5SVSPYujsiXmd7x0KHLC/view?usp=sharing). 
 # Reproducing Table 1. 
 ## PhenomNN_simple
+### With encodings
+We simply replace the folder. I created folders coauthorship_with_encodings, cocitation_with_encodings.
+They contain the same data, but the features matrix have been augmented with the encodings.
+
+Eg run
+```
+ python train_faster.py --type phenomnn_s --activate_dataset coauthorship_with_encodings/cora  --lr 0.01 --dropout 0.7 --hidden 64 --lam0 20 --lam1 80 --alp 0.1 --prop_step 16 --data_path ./data --save_dir ./ --print_freq 100 --epochs 1000 --gpu -1 --sigma -1
+ ```
+ Note that gpu is -1 as I am running local on mac.
+ 
 ### For cocitation and coauthorship datasets
 The datasets are in ['coauthorship/dblp','coauthorship/cora','cocitation/cora','cocitation/pubmed','cocitation/citeseer']  
 ```

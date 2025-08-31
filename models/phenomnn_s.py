@@ -3,12 +3,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
-from dgl.mock_sparse import create_from_coo, diag, identity
-       
+from utils.sparse_utils import create_from_coo, diag, identity
+
+
 class GraphConvolution(nn.Module):
 
-    def __init__(self, in_features, out_features, residual=False, variant=False, incidence_v=100, incidence_e=50,
-                 init_dist=None, args=None):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        residual=False,
+        variant=False,
+        incidence_v=100,
+        incidence_e=50,
+        init_dist=None,
+        args=None,
+    ):
         super(GraphConvolution, self).__init__()
         self.variant = variant
         self.args = args
@@ -16,61 +26,62 @@ class GraphConvolution(nn.Module):
             self.in_features = 2 * in_features
         else:
             self.in_features = in_features
-        self.lam4=args.lam4
-        if self.lam4!=0:
+        self.lam4 = args.lam4
+        if self.lam4 != 0:
             exit(0)
-        self.lam0=args.lam0
-        self.lam1=args.lam1
-        self.alpha=args.alp if args.alp !=0 else 1/(1+args.lam4+args.lam0+args.lam1)
-        self.num_steps=args.prop_step
+        self.lam0 = args.lam0
+        self.lam1 = args.lam1
+        self.alpha = (
+            args.alp if args.alp != 0 else 1 / (1 + args.lam4 + args.lam0 + args.lam1)
+        )
+        self.num_steps = args.prop_step
         self.out_features = out_features
         self.residual = residual
-       
+
         # self.weight = Parameter(torch.FloatTensor(self.in_features, self.out_features))
         self.adj = None
-        self.normalize_type=args.normalize_type#in ["edge","none","full","node"]
+        self.normalize_type = args.normalize_type  # in ["edge","none","full","node"]
         if args.H:
             # H = torch.rand(in_features, in_features)
             # bound = 4/in_features # normal
             # nn.init.normal_(H, 0, bound)
             H = torch.rand(in_features, in_features)
-            bound = 1/in_features # normal
+            bound = 1 / in_features  # normal
             nn.init.normal_(H, 0, bound)
             H = H + torch.eye(in_features)
-            self.H=nn.Parameter(H)
+            self.H = nn.Parameter(H)
 
         else:
-            self.H=None
+            self.H = None
 
-        self.init_attn=None
+        self.init_attn = None
         self.reset_parameters()
 
     def reset_parameters(self):
         # stdv = 1. / math.sqrt(self.out_features)
         # self.weight.data.uniform_(-stdv, stdv)
         pass
-    
+
     def forward(self, X, A, D):
-        I=D[1]
-        D=D[0]
+        I = D[1]
+        D = D[0]
 
         # try:
 
         #     B=B.to("cpu")
         #     src,dst=B.coalesce().indices().to(X.device)
-        
+
         #     B=create_from_coo(src,dst,torch.ones_like(src).to(torch.float32),shape=B.shape)
         #     print("Converting")
         # except:
         #     pass
         ##B is the incidence matrix with N x E
-        
+
         ##after linear and dropout
-         # Compute Y = Y0 = f(X; W) using a two-layer MLP.
-        H=self.H 
+        # Compute Y = Y0 = f(X; W) using a two-layer MLP.
+        H = self.H
         # Y = Y0 = self.act_fn(self.mlp(X))
         Y = Y0 = X
-       
 
         ####
 
@@ -88,28 +99,40 @@ class GraphConvolution(nn.Module):
 
         else:
 
-            Q_tild=D + I
+            Q_tild = D + I
 
         # Iteratively compute new Y by equation (6) in the paper.
         for k in range(self.num_steps):
 
-
-            Y_hat = A @ Y + Y0 
-            Y = (1 - self.alpha) * Y + self.alpha * (Q_tild ** -1) @ Y_hat
-
+            Y_hat = A @ Y + Y0
+            Y = (1 - self.alpha) * Y + self.alpha * (Q_tild**-1) @ Y_hat
 
         # we have linear out of this module
         return Y
-        
 
 
 class phenomnn_s(nn.Module):
-    def __init__(self, nfeat, nlayers, nhidden, nclass, dropout, lamda, alpha, variant, incidence_v=100, incidence_e=50,
-                 init_dist=None, args=None):
+    def __init__(
+        self,
+        nfeat,
+        nlayers,
+        nhidden,
+        nclass,
+        dropout,
+        lamda,
+        alpha,
+        variant,
+        incidence_v=100,
+        incidence_e=50,
+        init_dist=None,
+        args=None,
+    ):
         super(phenomnn_s, self).__init__()
         self.convs = nn.ModuleList()
         for _ in range(1):
-            self.convs.append(GraphConvolution(nhidden, nhidden, variant=variant,args=args))
+            self.convs.append(
+                GraphConvolution(nhidden, nhidden, variant=variant, args=args)
+            )
         self.fcs = nn.ModuleList()
         self.fcs.append(nn.Linear(nfeat, nhidden))
         self.fcs.append(nn.Linear(nhidden, nclass))
@@ -143,9 +166,12 @@ class phenomnn_s(nn.Module):
         return self.out_features
 
     def __repr__(self):
-        return "%s lamda=%s alpha=%s (%d - [%d:%d] > %d)" % (self.__class__.__name__,self.lamda,
-                                                    self.alpha,
-                                                    self.in_features,
-                                                    self.hiddendim,
-                                                    self.nhiddenlayer,
-                                                    self.out_features)
+        return "%s lamda=%s alpha=%s (%d - [%d:%d] > %d)" % (
+            self.__class__.__name__,
+            self.lamda,
+            self.alpha,
+            self.in_features,
+            self.hiddendim,
+            self.nhiddenlayer,
+            self.out_features,
+        )
